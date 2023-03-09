@@ -1,0 +1,11 @@
+{
+    "name": "dev.edger.unity.launcher",
+    "displayName": "Dev.Edger.Unity.Launcher",
+    "version": "0.1.0",
+    "unity": "2020.3",
+    "description": "TODO",
+    "category": "Tools",
+    "dependencies": {
+        "dev.edger.unity.assets": "0.1.0"
+    }
+}
