@@ -32,7 +32,7 @@ namespace Edger.Unity.Launcher.Dev {
         private void HackWebRequestURL(UnityWebRequest request) {
             var url = request.url;
             if (!string.IsNullOrEmpty(AssetsUrlFrom) && !string.IsNullOrEmpty(AssetsUrlTo)) {
-                request.url = url.Replace(AssetsUrlFrom, AssetsUrlTo);
+                request.url = url.ReplaceFirst(AssetsUrlFrom, AssetsUrlTo);
                 if (url != request.url) {
                     Info("HackWebRequestURL: [Hacked] {0} -> {1}", url, request.url);
                 } else {
