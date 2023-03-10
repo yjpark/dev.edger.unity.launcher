@@ -122,9 +122,7 @@ namespace Edger.Unity.Launcher {
                 if (string.IsNullOrEmpty(state.Config.PreloadLabel)) {
                     state.Status = CatalogStatus.AssetsPreloaded;
                 } else {
-                    var op = assetsPreloader.HandleRequestAsync(new AssetsPreloader.Req {
-                        Key = state.Config.PreloadLabel,
-                    });
+                    var op = assetsPreloader.HandleRequestAsync(state.Config.PreloadLabel);
                     while (op.MoveNext()) { yield return op.Current; }
 
                     var result = assetsPreloader.LastAsync;
@@ -167,7 +165,35 @@ namespace Edger.Unity.Launcher {
         }
 
         private IEnumerator LoadHomeSceneAsync() {
-            return Addressables.LoadSceneAsync(Config.HomeScene);
+            Bus.Target.Publish(LauncherBus.Msg.HomeLoading);
+            Addressables.LoadSceneAsync(Config.HomeScene);
+            yield return null;
+            Bus.Target.Publish(LauncherBus.Msg.HomeLoaded);
+        }
+
+        private IEnumerator LoadHomeSceneAsync1() {
+            Bus.Target.Publish(LauncherBus.Msg.HomeLoading);
+            var sceneLoader = Assets.Instance.SceneLoader.Target;
+            var op = sceneLoader.HandleRequestAsync(Config.HomeScene);
+            while (op.MoveNext()) { yield return op.Current; }
+
+            bool hasError = false;
+            var result = sceneLoader.LastAsync;
+            if (result.IsOk) {
+                var res = result.Response;
+                if (res.Status != AsyncOperationStatus.Succeeded) {
+                    hasError = true;
+                    Error("LoadHomeScene Failed: {0} -> {1} {2}", Config.HomeScene, res.Status, res.Error);
+                }
+            } else {
+                hasError = true;
+                Error("LoadHomeScene Failed: {0} -> {1}", Config.HomeScene, result.Error);
+            }
+            if (hasError) {
+                Bus.Target.Publish(LauncherBus.Msg.HomeLoadFailed);
+            } else {
+                Bus.Target.Publish(LauncherBus.Msg.HomeLoaded);
+            }
         }
 
         public void Start() {
