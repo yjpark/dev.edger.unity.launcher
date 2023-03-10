@@ -12,6 +12,9 @@ namespace Edger.Unity.Launcher {
         CatalogLoading,
         CatalogLoaded,
         CatalogLoadFailed,
+        SizeCalculating,
+        SizeCalculated,
+        SizeCalculateFailed,
         AssetsPreloading,
         AssetsPreloaded,
         AssetsPreloadFailed,
@@ -23,6 +26,7 @@ namespace Edger.Unity.Launcher {
         public CatalogStatus Status;
         public string LocatorId;
         public object[] AssetsKeys;
+        public long DownloadSize;
         public Exception Error;
     }
 

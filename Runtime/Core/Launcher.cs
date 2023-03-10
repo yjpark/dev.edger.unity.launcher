@@ -35,9 +35,11 @@ namespace Edger.Unity.Launcher {
                 StartCoroutine(LoadCatalogsAsync());
             });
             Bus.Target.AddSub(LauncherBus.Msg.CatalogsLoaded, this, (bus, msg) => {
+                StartCoroutine(CalcCatalogsAsync());
+            });
+            Bus.Target.AddSub(LauncherBus.Msg.SizeCalculated, this, (bus, msg) => {
                 StartCoroutine(PreloadCatalogsAsync());
             });
-
             Bus.Target.AddSub(LauncherBus.Msg.AssetsPreloaded, this, (bus, msg) => {
                 StartCoroutine(LoadHomeSceneAsync());
             });
@@ -116,8 +118,58 @@ namespace Edger.Unity.Launcher {
             }
         }
 
-        private IEnumerator PreloadCatalogAsync(CatalogState state) {
+        private IEnumerator CalcCatalogAsync(CatalogState state) {
             if (state.Status == CatalogStatus.CatalogLoaded) {
+                var sizeCalculater = Assets.Instance.AssetsSizeCalculator.Target;
+                if (string.IsNullOrEmpty(state.Config.PreloadLabel)) {
+                    state.Status = CatalogStatus.SizeCalculated;
+                } else {
+                    var op = sizeCalculater.HandleRequestAsync(state.Config.PreloadLabel);
+                    while (op.MoveNext()) { yield return op.Current; }
+
+                    var result = sizeCalculater.LastAsync;
+                    if (result.IsOk) {
+                        var res = result.Response;
+                        if (res.Status == AsyncOperationStatus.Succeeded) {
+                            state.Status = CatalogStatus.SizeCalculated;
+                            state.DownloadSize = res.Result;
+                        } else {
+                            state.Status = CatalogStatus.SizeCalculateFailed;
+                            state.Error = res.Error;
+                        }
+                    } else {
+                        state.Status = CatalogStatus.SizeCalculateFailed;
+                        state.Error = result.Error;
+                    }
+                }
+            }
+        }
+
+        private IEnumerator CalcCatalogsAsync() {
+            Bus.Target.Publish(LauncherBus.Msg.SizeCalculating);
+            foreach (var state in CatalogStates.Target.Values) {
+                var op = CalcCatalogAsync(state);
+                while (op.MoveNext()) { yield return op.Current; }
+            }
+            bool hasError = false;
+            foreach (var state in CatalogStates.Target.Values) {
+                if (state.Status != CatalogStatus.SizeCalculated) {
+                    Error("CalcCatalog Failed: {0}", state.Config);
+                    if (!state.IsOptional) {
+                        hasError = true;
+                    }
+                }
+            }
+            if (hasError) {
+                Bus.Target.Publish(LauncherBus.Msg.SizeCalculateFailed);
+            } else {
+                Bus.Target.Publish(LauncherBus.Msg.SizeCalculated);
+            }
+        }
+
+
+        private IEnumerator PreloadCatalogAsync(CatalogState state) {
+            if (state.Status == CatalogStatus.SizeCalculated) {
                 var assetsPreloader = Assets.Instance.AssetsPreloader.Target;
                 if (string.IsNullOrEmpty(state.Config.PreloadLabel)) {
                     state.Status = CatalogStatus.AssetsPreloaded;
