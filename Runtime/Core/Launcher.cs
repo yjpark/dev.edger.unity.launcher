@@ -43,7 +43,7 @@ namespace Edger.Unity.Launcher {
             foreach (var catalog in Config.MandatoryCatalogs) {
                 var op = catalogLoader.HandleRequestAsync(new CatalogLoader.Req {
                     Key = catalog.Key,
-                    Url = catalog.Url,
+                    Url = catalog.CalcRealUrl(this),
                 });
                 while (op.MoveNext()) { yield return op.Current; }
                 if (!catalogLoader.LastAsync.IsOk) { failed = true; }
