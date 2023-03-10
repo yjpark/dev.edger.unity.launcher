@@ -30,7 +30,7 @@ namespace Edger.Unity.Launcher {
                 LauncherTool.Instance.AssetsUrlFrom = Config.DevAssetsUrlFrom;
                 LauncherTool.Instance.AssetsUrlTo = Config.DevAssetsUrlTo;
 
-                Assets.Instance.ContentChannel.Target.DebugMode = true;
+                Assets.Instance.AssetsChannel.Target.DebugMode = true;
 
                 Caching.ClearCache();
             }
@@ -38,7 +38,7 @@ namespace Edger.Unity.Launcher {
 
         public IEnumerator Start() {
             var catalogLoader = Assets.Instance.CatalogLoader.Target;
-            var assetLoader = Assets.Instance.AssetLoader.Target;
+            var assetsPreloader = Assets.Instance.AssetsPreloader.Target;
             bool failed = false;
             foreach (var catalog in Config.MandatoryCatalogs) {
                 var op = catalogLoader.HandleRequestAsync(new CatalogLoader.Req {
@@ -48,14 +48,17 @@ namespace Edger.Unity.Launcher {
                 while (op.MoveNext()) { yield return op.Current; }
                 if (!catalogLoader.LastAsync.IsOk) { failed = true; }
                 if (!failed && !string.IsNullOrEmpty(catalog.PreloadLabel)) {
-                    op = assetLoader.HandleRequestAsync(new AssetLoader.Req {
+                    op = assetsPreloader.HandleRequestAsync(new AssetsPreloader.Req {
                         Key = catalog.PreloadLabel,
                     });
                     while (op.MoveNext()) { yield return op.Current; }
-                    if (!assetLoader.LastAsync.IsOk) { failed = true; }
+                    if (!assetsPreloader.LastAsync.IsOk) { failed = true; }
                 }
             }
             if (!failed) {
+                var op = Assets.Instance.CacheCleaner.Target.HandleRequestAsync(CacheCleaner.Req.PRESERVE_ALL);
+                while (op.MoveNext()) { yield return op.Current; }
+
                 Addressables.LoadSceneAsync(Config.HomeScene);
             }
         }
