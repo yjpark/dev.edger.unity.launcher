@@ -46,20 +46,24 @@ namespace Edger.Unity.Launcher {
                     Url = catalog.CalcRealUrl(this),
                 });
                 while (op.MoveNext()) { yield return op.Current; }
-                if (!catalogLoader.LastAsync.IsOk) { failed = true; }
-                if (!failed && !string.IsNullOrEmpty(catalog.PreloadLabel)) {
+                if (!catalogLoader.LastAsync.IsOk) {
+                    failed = true;
+                } else if (!string.IsNullOrEmpty(catalog.PreloadLabel)) {
                     op = assetsPreloader.HandleRequestAsync(new AssetsPreloader.Req {
                         Key = catalog.PreloadLabel,
                     });
                     while (op.MoveNext()) { yield return op.Current; }
                     if (!assetsPreloader.LastAsync.IsOk) { failed = true; }
                 }
+
             }
             if (!failed) {
                 var op = Assets.Instance.CacheCleaner.Target.HandleRequestAsync(CacheCleaner.Req.PRESERVE_ALL);
                 while (op.MoveNext()) { yield return op.Current; }
 
                 Addressables.LoadSceneAsync(Config.HomeScene);
+            } else {
+                //TODO
             }
         }
     }
