@@ -235,12 +235,12 @@ namespace Edger.Unity.Launcher {
                     } catch (Exception e) {
                         Error("LoadAssembly Failed: {0} [{1}] -> {2}", state.Config.Key, assemblyName, e);
                         if (!isOptional) {
-                            state.Status = CatalogStatus.AssetsPreloadFailed;
+                            state.Status = CatalogStatus.AssembliesLoadFailed;
                             state.Error = e;
                         }
                     }
                 } else if (!isOptional) {
-                    state.Status = CatalogStatus.AssetsPreloadFailed;
+                    state.Status = CatalogStatus.AssembliesLoadFailed;
                     state.Error = res.Error;
                 }
             } else if (!isOptional) {
