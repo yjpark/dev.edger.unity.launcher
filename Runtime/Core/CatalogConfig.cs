@@ -15,6 +15,8 @@ namespace Edger.Unity.Launcher {
         public string Key;
         public string Url;
         public string PreloadLabel = "preload";
+        public string[] MandatoryAssemblies;
+        public string[] OptionalAssemblies;
 
         public override string ToString() {
             return JsonUtility.ToJson(this);

@@ -18,6 +18,9 @@ namespace Edger.Unity.Launcher {
         AssetsPreloading,
         AssetsPreloaded,
         AssetsPreloadFailed,
+        AssembliesLoading,
+        AssembliesLoaded,
+        AssembliesLoadFailed,
     }
 
     public class CatalogState  {
@@ -31,6 +34,5 @@ namespace Edger.Unity.Launcher {
     }
 
     public class CatalogStates : DictAspect<string, CatalogState> {
-
     }
 }

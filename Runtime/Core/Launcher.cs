@@ -41,6 +41,9 @@ namespace Edger.Unity.Launcher {
                 StartCoroutine(PreloadCatalogsAsync());
             });
             Bus.Target.AddSub(LauncherBus.Msg.AssetsPreloaded, this, (bus, msg) => {
+                StartCoroutine(LoadCatalogsAssembliesAsync());
+            });
+            Bus.Target.AddSub(LauncherBus.Msg.AssembliesLoaded, this, (bus, msg) => {
                 StartCoroutine(LoadHomeSceneAsync());
             });
 
@@ -120,10 +123,11 @@ namespace Edger.Unity.Launcher {
 
         private IEnumerator CalcCatalogAsync(CatalogState state) {
             if (state.Status == CatalogStatus.CatalogLoaded) {
-                var sizeCalculater = Assets.Instance.AssetsSizeCalculator.Target;
                 if (string.IsNullOrEmpty(state.Config.PreloadLabel)) {
                     state.Status = CatalogStatus.SizeCalculated;
                 } else {
+                    state.Status = CatalogStatus.SizeCalculating;
+                    var sizeCalculater = Assets.Instance.AssetsSizeCalculator.Target;
                     var op = sizeCalculater.HandleRequestAsync(state.Config.PreloadLabel);
                     while (op.MoveNext()) { yield return op.Current; }
 
@@ -167,13 +171,13 @@ namespace Edger.Unity.Launcher {
             }
         }
 
-
         private IEnumerator PreloadCatalogAsync(CatalogState state) {
             if (state.Status == CatalogStatus.SizeCalculated) {
-                var assetsPreloader = Assets.Instance.AssetsPreloader.Target;
                 if (string.IsNullOrEmpty(state.Config.PreloadLabel)) {
                     state.Status = CatalogStatus.AssetsPreloaded;
                 } else {
+                    state.Status = CatalogStatus.AssetsPreloading;
+                    var assetsPreloader = Assets.Instance.AssetsPreloader.Target;
                     var op = assetsPreloader.HandleRequestAsync(state.Config.PreloadLabel);
                     while (op.MoveNext()) { yield return op.Current; }
 
@@ -213,6 +217,93 @@ namespace Edger.Unity.Launcher {
                 Bus.Target.Publish(LauncherBus.Msg.AssetsPreloadFailed);
             } else {
                 Bus.Target.Publish(LauncherBus.Msg.AssetsPreloaded);
+            }
+        }
+
+        private IEnumerator LoadCatalogAssemblyAsync(CatalogState state, string assemblyName, bool isOptional) {
+            var bytesLoader = Assets.Instance.BytesLoader.Target;
+            var op = bytesLoader.HandleRequestAsync(assemblyName);
+            while (op.MoveNext()) { yield return op.Current; }
+
+            var result = bytesLoader.LastAsync;
+            if (result.IsOk) {
+                var res = result.Response;
+                if (res.Status == AsyncOperationStatus.Succeeded) {
+                    try {
+                        AssemblyUtil.LoadAssembly(res.Result);
+                        Error("LoadAssembly Succeeded: {0} [{1}]", state.Config.Key, assemblyName);
+                    } catch (Exception e) {
+                        Error("LoadAssembly Failed: {0} [{1}] -> {2}", state.Config.Key, assemblyName, e);
+                        if (!isOptional) {
+                            state.Status = CatalogStatus.AssetsPreloadFailed;
+                            state.Error = e;
+                        }
+                    }
+                } else if (!isOptional) {
+                    state.Status = CatalogStatus.AssetsPreloadFailed;
+                    state.Error = res.Error;
+                }
+            } else if (!isOptional) {
+                state.Status = CatalogStatus.AssembliesLoadFailed;
+                state.Error = result.Error;
+            }
+        }
+
+
+        private IEnumerator LoadCatalogAssembliesAsync(CatalogState state) {
+            if (state.Status == CatalogStatus.AssetsPreloaded) {
+                int mandatoryCount = state.Config.MandatoryAssemblies == null ? 0 : state.Config.MandatoryAssemblies.Length;
+                int optionalCount = state.Config.OptionalAssemblies == null ? 0 : state.Config.OptionalAssemblies.Length;
+                if (mandatoryCount == 0 && optionalCount == 0) {
+                    state.Status = CatalogStatus.AssembliesLoaded;
+                } else {
+                    state.Status = CatalogStatus.AssembliesLoading;
+                    if (mandatoryCount > 0) {
+                        foreach (var assemblyName in state.Config.MandatoryAssemblies) {
+                            var op = LoadCatalogAssemblyAsync(state, assemblyName, false);
+                            while (op.MoveNext()) { yield return op.Current; }
+
+                            if (state.Status == CatalogStatus.AssembliesLoadFailed) {
+                                break;
+                            }
+                        }
+                    }
+                    if (state.Status == CatalogStatus.AssembliesLoading && optionalCount > 0) {
+                        foreach (var assemblyName in state.Config.OptionalAssemblies) {
+                            var op = LoadCatalogAssemblyAsync(state, assemblyName, true);
+                            while (op.MoveNext()) { yield return op.Current; }
+
+                            if (state.Status == CatalogStatus.AssembliesLoadFailed) {
+                                break;
+                            }
+                        }
+                    }
+                    if (state.Status == CatalogStatus.AssembliesLoading) {
+                        state.Status = CatalogStatus.AssembliesLoaded;
+                    }
+                }
+            }
+        }
+
+        private IEnumerator LoadCatalogsAssembliesAsync() {
+            Bus.Target.Publish(LauncherBus.Msg.AssembliesLoading);
+            foreach (var state in CatalogStates.Target.Values) {
+                var op = LoadCatalogAssembliesAsync(state);
+                while (op.MoveNext()) { yield return op.Current; }
+            }
+            bool hasError = false;
+            foreach (var state in CatalogStates.Target.Values) {
+                if (state.Status != CatalogStatus.AssembliesLoaded) {
+                    Error("LoadCatalogAssembliesAsync Failed: {0}", state.Config);
+                    if (!state.IsOptional) {
+                        hasError = true;
+                    }
+                }
+            }
+            if (hasError) {
+                Bus.Target.Publish(LauncherBus.Msg.AssembliesLoadFailed);
+            } else {
+                Bus.Target.Publish(LauncherBus.Msg.AssembliesLoaded);
             }
         }
 
