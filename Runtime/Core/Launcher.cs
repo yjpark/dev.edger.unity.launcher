@@ -5,6 +5,12 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
+using UnityEngine.ResourceManagement.ResourceProviders;
+using UnityEngine.SceneManagement;
+
+#if ODIN_INSPECTOR
+using Sirenix.OdinInspector;
+#endif
 
 using Edger.Unity;
 using Edger.Unity.Context;
@@ -15,46 +21,45 @@ namespace Edger.Unity.Launcher {
     public partial class Launcher : Env, ISingleton {
         private static Launcher _Instance;
         public static Launcher Instance { get => Singleton.GetInstance(ref _Instance); }
+        public static string ToString(Scene scene) {
+            return string.Format("[Scene: index = {0}, name = {1}, path = {2}, IsValid() = {3}, isLoaded = {4}, isDirty = {5}]",
+                        scene.buildIndex, scene.name, scene.path,
+                        scene.IsValid(), scene.isLoaded, scene.isDirty);
+        }
 
         [SerializeField]
         private LauncherConfig _Config;
         public LauncherConfig Config { get => _Config; }
+
+        private int _LauncherSceneBuildIndex;
 
         // Aspects
         public AspectReference<LauncherBus> Bus { get; private set; }
         public AspectReference<CatalogStates> CatalogStates { get; private set; }
 
         protected override void OnAwake() {
+            if (_Instance != null) {
+                GameObjectUtil.Destroy(this.gameObject);
+                return;
+            }
             Singleton.SetupInstance(ref _Instance, this);
+
+            var launcherScene = SceneManager.GetActiveScene();
+            Info("Launcher Scene: {0}", ToString(launcherScene));
+            _LauncherSceneBuildIndex = launcherScene.buildIndex;
 
             Bus = CacheAspect<LauncherBus>();
             CatalogStates = CacheAspect<CatalogStates>();
 
-            Bus.Target.AddSub(LauncherBus.Msg.Init, this, (bus, msg) => {
-                CatalogStates.Target.Clear();
-                StartCoroutine(LoadCatalogsAsync());
-            });
-            Bus.Target.AddSub(LauncherBus.Msg.CatalogsLoaded, this, (bus, msg) => {
-                StartCoroutine(CalcCatalogsAsync());
-            });
-            Bus.Target.AddSub(LauncherBus.Msg.SizeCalculated, this, (bus, msg) => {
-                StartCoroutine(PreloadCatalogsAsync());
-            });
-            Bus.Target.AddSub(LauncherBus.Msg.AssetsPreloaded, this, (bus, msg) => {
-                StartCoroutine(LoadCatalogsAssembliesAsync());
-            });
-            Bus.Target.AddSub(LauncherBus.Msg.AssembliesLoaded, this, (bus, msg) => {
-                StartCoroutine(LoadHomeSceneAsync());
-            });
+            SceneManager.sceneLoaded += OnSceneLoaded;
+            Bus.Target.AddBusWatcher(this, OnBusMsg);
 
             if (DevMode) {
                 LauncherTool.Instance.AssetsUrlFrom = Config.DevAssetsUrlFrom;
                 LauncherTool.Instance.AssetsUrlTo = Config.DevAssetsUrlTo;
 
-                Bus.Target.DebugMode = true;
-                Assets.Instance.AssetsChannel.Target.DebugMode = true;
-
-                Caching.ClearCache();
+                //Assets.Instance.AssetsChannel.Target.DebugMode = true;
+                //Assets.ClearAllCache();
             }
         }
 
@@ -231,7 +236,7 @@ namespace Edger.Unity.Launcher {
                 if (res.Status == AsyncOperationStatus.Succeeded) {
                     try {
                         AssemblyUtil.LoadAssembly(res.Result);
-                        Error("LoadAssembly Succeeded: {0} [{1}]", state.Config.Key, assemblyName);
+                        Info("LoadAssembly Succeeded: {0} [{1}]", state.Config.Key, assemblyName);
                     } catch (Exception e) {
                         Error("LoadAssembly Failed: {0} [{1}] -> {2}", state.Config.Key, assemblyName, e);
                         if (!isOptional) {
@@ -307,40 +312,78 @@ namespace Edger.Unity.Launcher {
             }
         }
 
-        private IEnumerator LoadHomeSceneAsync() {
+        private void LoadHomeScene() {
             Bus.Target.Publish(LauncherBus.Msg.HomeLoading);
-            Addressables.LoadSceneAsync(Config.HomeScene);
-            yield return null;
-            Bus.Target.Publish(LauncherBus.Msg.HomeLoaded);
+            Addressables.LoadSceneAsync(Config.HomeScene).Completed += OnLoadHomeSceneCompleted;
         }
 
-        private IEnumerator LoadHomeSceneAsync1() {
-            Bus.Target.Publish(LauncherBus.Msg.HomeLoading);
-            var sceneLoader = Assets.Instance.SceneLoader.Target;
-            var op = sceneLoader.HandleRequestAsync(Config.HomeScene);
-            while (op.MoveNext()) { yield return op.Current; }
-
-            bool hasError = false;
-            var result = sceneLoader.LastAsync;
-            if (result.IsOk) {
-                var res = result.Response;
-                if (res.Status != AsyncOperationStatus.Succeeded) {
-                    hasError = true;
-                    Error("LoadHomeScene Failed: {0} -> {1} {2}", Config.HomeScene, res.Status, res.Error);
-                }
-            } else {
-                hasError = true;
-                Error("LoadHomeScene Failed: {0} -> {1}", Config.HomeScene, result.Error);
-            }
-            if (hasError) {
-                Bus.Target.Publish(LauncherBus.Msg.HomeLoadFailed);
-            } else {
+        private void OnLoadHomeSceneCompleted(AsyncOperationHandle<SceneInstance> res) {
+            if (res.Status == AsyncOperationStatus.Succeeded) {
                 Bus.Target.Publish(LauncherBus.Msg.HomeLoaded);
+            } else {
+                Error("LoadHomeScene Failed: {0}", res.OperationException);
+                Bus.Target.Publish(LauncherBus.Msg.HomeLoadFailed);
             }
         }
 
         public void Start() {
             Bus.Target.Publish(LauncherBus.Msg.Init);
+        }
+
+        public void OnDestroy() {
+            if (_Instance == this) {
+                SceneManager.sceneLoaded -= OnSceneLoaded;
+            }
+        }
+
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
+            Info("OnSceneLoaded: [{0}] {1}", mode, ToString(scene));
+        }
+
+#if ODIN_INSPECTOR
+        [Button(ButtonSizes.Large)]
+#endif
+        private void Relaunch() {
+            var scene = SceneManager.GetActiveScene();
+            if (scene.buildIndex == _LauncherSceneBuildIndex) {
+                Error("Relaunch Failed: Already in Launcher Scene: {0}", ToString(scene));
+                return;
+            }
+            SceneManager.LoadScene(_LauncherSceneBuildIndex);
+            Bus.Target.Publish(LauncherBus.Msg.Init);
+        }
+
+        private void OnBusMsg(Aspect bus, LauncherBus.Msg msg) {
+            switch (msg) {
+                case LauncherBus.Msg.Init:
+                    CatalogStates.Target.Clear();
+                    StartCoroutine(LoadCatalogsAsync());
+                    break;
+                case LauncherBus.Msg.CatalogsLoaded:
+                    StartCoroutine(CalcCatalogsAsync());
+                    break;
+                case LauncherBus.Msg.SizeCalculated:
+                    StartCoroutine(PreloadCatalogsAsync());
+                    break;
+                case LauncherBus.Msg.AssetsPreloaded:
+                    StartCoroutine(LoadCatalogsAssembliesAsync());
+                    break;
+                case LauncherBus.Msg.AssembliesLoaded:
+                    LoadHomeScene();
+                    break;
+                case LauncherBus.Msg.Relaunch:
+                    Relaunch();
+                    break;
+                case LauncherBus.Msg.CatalogsLoadFailed:
+                case LauncherBus.Msg.SizeCalculateFailed:
+                case LauncherBus.Msg.AssetsPreloadFailed:
+                case LauncherBus.Msg.AssembliesLoadFailed:
+                    if (Config.TryLoadHomeOnError) {
+                        Error("TryLoadHomeOnError: {0}", msg);
+                        LoadHomeScene();
+                    }
+                    break;
+            }
         }
     }
 }

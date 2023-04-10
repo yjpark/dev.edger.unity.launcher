@@ -26,6 +26,7 @@ namespace Edger.Unity.Launcher {
             HomeLoading,
             HomeLoaded,
             HomeLoadFailed,
+            Relaunch,
         }
     }
 }

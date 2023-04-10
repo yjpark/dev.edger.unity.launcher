@@ -14,6 +14,8 @@ namespace Edger.Unity.Launcher {
         public CatalogConfig[] MandatoryCatalogs;
         public CatalogConfig[] OptionalCatalogs;
 
+        public bool TryLoadHomeOnError;
+
         public string DevAssetsUrlFrom;
         public string DevAssetsUrlTo;
     }
