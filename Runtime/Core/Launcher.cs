@@ -343,13 +343,21 @@ namespace Edger.Unity.Launcher {
 #if ODIN_INSPECTOR
         [Button(ButtonSizes.Large)]
 #endif
-        private void Relaunch() {
+        private void LoadLauncherScene() {
             var scene = SceneManager.GetActiveScene();
             if (scene.buildIndex == _LauncherSceneBuildIndex) {
-                Error("Relaunch Failed: Already in Launcher Scene: {0}", ToString(scene));
-                return;
+                Error("LoadLauncherScene Failed: Already in Launcher Scene: {0}", ToString(scene));
+            } else {
+                Info("LoadLauncherScene Loading...");
+                SceneManager.LoadScene(_LauncherSceneBuildIndex);
             }
-            SceneManager.LoadScene(_LauncherSceneBuildIndex);
+        }
+
+#if ODIN_INSPECTOR
+        [Button(ButtonSizes.Large)]
+#endif
+        private void Relaunch() {
+            LoadLauncherScene();
             Bus.Target.Publish(LauncherBus.Msg.Init);
         }
 
