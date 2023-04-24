@@ -38,28 +38,24 @@ namespace Edger.Unity.Launcher {
         public AspectReference<CatalogStates> CatalogStates { get; private set; }
 
         protected override void OnAwake() {
-            if (_Instance != null) {
-                GameObjectUtil.Destroy(this.gameObject);
-                return;
-            }
-            Singleton.SetupInstance(ref _Instance, this);
+            if (Singleton.SetupInstance(ref _Instance, this)) {
+                var launcherScene = SceneManager.GetActiveScene();
+                Info("Launcher Scene: {0}", ToString(launcherScene));
+                _LauncherSceneBuildIndex = launcherScene.buildIndex;
 
-            var launcherScene = SceneManager.GetActiveScene();
-            Info("Launcher Scene: {0}", ToString(launcherScene));
-            _LauncherSceneBuildIndex = launcherScene.buildIndex;
+                Bus = CacheAspect<LauncherBus>();
+                CatalogStates = CacheAspect<CatalogStates>();
 
-            Bus = CacheAspect<LauncherBus>();
-            CatalogStates = CacheAspect<CatalogStates>();
+                SceneManager.sceneLoaded += OnSceneLoaded;
+                Bus.Target.AddBusWatcher(this, OnBusMsg);
 
-            SceneManager.sceneLoaded += OnSceneLoaded;
-            Bus.Target.AddBusWatcher(this, OnBusMsg);
+                if (DevMode) {
+                    LauncherTool.Instance.AssetsUrlFrom = Config.DevAssetsUrlFrom;
+                    LauncherTool.Instance.AssetsUrlTo = Config.DevAssetsUrlTo;
 
-            if (DevMode) {
-                LauncherTool.Instance.AssetsUrlFrom = Config.DevAssetsUrlFrom;
-                LauncherTool.Instance.AssetsUrlTo = Config.DevAssetsUrlTo;
-
-                //Assets.Instance.AssetsChannel.Target.DebugMode = true;
-                //Assets.ClearAllCache();
+                    //Assets.Instance.AssetsChannel.Target.DebugMode = true;
+                    //Assets.ClearAllCache();
+                }
             }
         }
 
